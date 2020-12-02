@@ -1,0 +1,42 @@
+version: '2.4'
+
+services:
+
+  temp_sensors:
+    build: .
+    tty: true
+    container_name: temp_sensors
+    # restart always = if unhealthy re-start the container
+    restart: always
+ 
+    networks:
+      - mysql_network
+ 
+    volumes:
+      - ./src/:/opt/mqtt_sub
+
+    command: /opt/mqtt_sub/sub-mysql.py
+
+    # # check health here:   docker inspect --format='{{json .State.Health}}' rtl433_weewx | jq .
+    # healthcheck:
+    #   test:
+    #     [
+    #       "CMD-SHELL",
+    #       "/usr/local/bin/healthcheck.sh",
+    #     ]
+    #   interval: 60s
+    #   timeout: 10s
+    #   retries: 3
+    #   # delay long enough for weewx to gather an update and send to WU 
+    #   start_period: 3m
+
+# we have to specify the network subnet as that is what mysql expects the container to connect from
+networks:
+  mysql_network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: "192.168.83.0/24"
+          gateway: "192.168.83.1"
+
