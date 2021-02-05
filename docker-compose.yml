@@ -5,7 +5,7 @@ services:
   temp_sensors:
     build: .
     tty: true
-    container_name: temp_sensors
+    container_name: weather-underground
     # restart always = if unhealthy re-start the container
     restart: always
  
