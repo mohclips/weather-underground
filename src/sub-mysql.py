@@ -52,6 +52,10 @@ def on_message(client, userdata, msg):
 
     value = str(msg.payload.decode("utf-8")).strip() # payload is the value, in this case the json
 
+    # TODO: pull air quality stats from mySQL
+
+    # TODO: save all data back to old weewx DB
+
     if DEBUG==1:
         print(value)
 
@@ -62,6 +66,7 @@ def on_message(client, userdata, msg):
     Td = dewpoint_approximation(T,RH)
 
     # build URL
+    # https://kapuablog.wordpress.com/2021/02/07/pws-weather-underground-upload/
 
     url = "https://weatherstation.wunderground.com/weatherstation/updateweatherstation.php"
     url += "?action=updateraw"
