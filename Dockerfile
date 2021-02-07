@@ -6,6 +6,6 @@ FROM python:slim
 #     && apt -y --auto-remove purge $build_deps \
 #     && rm -rf /var/lib/apt/lists/* \
     
-RUN pip install pymysql paho-mqtt
+RUN pip install pymysql paho-mqtt requests
 
 CMD tail -f /dev/null

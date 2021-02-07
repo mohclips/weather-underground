@@ -2,7 +2,7 @@ version: '2.4'
 
 services:
 
-  temp_sensors:
+  weather-underground:
     build: .
     tty: true
     container_name: weather-underground
@@ -36,7 +36,7 @@ networks:
     driver: bridge
     ipam:
       driver: default
-      config:
-        - subnet: "192.168.83.0/24"
-          gateway: "192.168.83.1"
+      #config:
+      #  - subnet: "192.168.83.0/24"
+      #    gateway: "192.168.83.1"
 

@@ -1,65 +1,96 @@
 #!/usr/local/bin/python3
 
+##  rtl_433 -F "mqtt://mqtt_bus:1883,retain=60,events=rtl_433/[model],devices=rtl_433/[model]/[id]"
+
+
 import paho.mqtt.client as mqtt
 import pymysql.cursors
 import sys
 import time
 
+import requests
+import json
+import math
+import re
+
 import login_details
+
+DEBUG=1
+
+sensor_model="Fineoffset-WHx080"
+
+software_name = "Custom_RTL433"
+
+# approximation valid for
+# 0 degC < T < 60 degC
+# 1% < RH < 100%
+# 0 degC < Td < 50 degC 
+# constants
+a = 17.271
+b = 237.7 # degC
+def dewpoint_approximation(T,RH):
+    Td = (b * gamma(T,RH)) / (a - gamma(T,RH))
+    return Td
+def gamma(T,RH):
+    g = (a * T / (b + T)) + math.log(RH/100.0)
+    return g
+
+
+def hpa_to_inches(pressure_in_hpa):
+    pressure_in_inches_of_m = pressure_in_hpa * 0.02953
+    return pressure_in_inches_of_m
+
 
 def on_connect(client, userdata, flags, rc):
     print("MQTT Client Connected")
-    client.subscribe("sensor/#")
+
+    # have to use events topic to get the raw json
+    client.subscribe("rtl_433/events/"+sensor_model)
 
 def on_message(client, userdata, msg):
     #print("Transmission received")
 
-    value = float(str(msg.payload.decode("utf-8")).strip())
+    value = str(msg.payload.decode("utf-8")).strip() # payload is the value, in this case the json
 
-    root_sensors,sensor_hex,item = str(msg.topic).split('/')
+    if DEBUG==1:
+        print(value)
 
-    sensor_id = int("0x"+sensor_hex,16)
+    j = json.loads(value)
 
-    now = time.strftime('%Y-%m-%d %H:%M:%S')
+    T=float(j['temperature_C'])
+    RH=float(j['humidity'])
+    Td = dewpoint_approximation(T,RH)
 
-    # print(now)
-    # print(sensor_hex)
-    # print(sensor_id)
-    # print(item)
-    # print(item[0])
-    # print(value)
+    # build URL
 
-    try:
-        db = pymysql.connect(host=login_details.mysqlHost, user=login_details.mysqlUser, password=login_details.mysqlPassword, db=login_details.dbName, 
-            charset='utf8mb4', cursorclass=pymysql.cursors.DictCursor)
-        #print("MySQL Client Connected")
-    except pymysql.Error as e:
-        print(e)
-        sys.exit()
-    
-    #finally:
-    #    print('Connection opened successfully.')   
-    
-    #
-    # sensor_update(db,payload)
-    #
+    url = "https://weatherstation.wunderground.com/weatherstation/updateweatherstation.php"
+    url += "?action=updateraw"
+    url += "&ID=" + login_details.wu_id
+    url += "&PASSWORD="  + login_details.wu_password
+    url += "&softwaretype=" + software_name
+    url += "&dateutc=" + j['time']
+    url += "&dailyrainin=" + "{0:.2f}".format(j['rain_mm'] * 0.0393701)
+    url += "&dewptf=" + "{0:.2f}".format((Td * 9.0 / 5.0) + 32.0)
+    #url += "&rainin=" + j['rain_mm']
+    url += "&humidity=" + str(j['humidity'])
+    url += "&tempf=" + "{0:.2f}".format((T * 9.0 / 5.0) + 32.0)
+    url += "&winddir=" + str(j['wind_dir_deg'])
+    url += "&windgustmph=" + "{0:.2f}".format(j['wind_max_km_h'] * 0.62137119)
+    url += "&windspeedmph=" + "{0:.2f}".format(j['wind_avg_km_h'] * 0.62137119)
 
-    with db.cursor() as cursor:
-        try:
-            sql = "INSERT INTO `indoor_temperature` (`sensor_id`, `date_time`, `value`, `vtype`) VALUES (%s, %s, %s, %s)"
-            cursor.execute(sql, (sensor_id, now, value, item[0]))
-        except pymysql.Error as e:
-            print(e)
-            sys.exit()
-        finally:
-            db.commit()
+    # PressureHpa * 0.0295299830714,
+    # RainToday * 0.0393701,
+    # RainLastHour * 0.0393701
 
+    print(re.sub("PASSWORD=.*?\&","PASSWORD=XXXXXXX&",url))
 
-    db.close()
-
+    # send to WU
+    r= requests.get(url)
+    if DEBUG==1:
+        print("Received " + str(r.status_code) + " " + str(r.text))
 
 # Connect the MQTT Client
-client = mqtt.Client("sensors2mysql-1")
+client = mqtt.Client("weatherunderground2mysql-1")
 client.on_connect = on_connect
 client.on_message = on_message
 # client.username_pw_set(username=mqttUser, password=mqttPassword)
