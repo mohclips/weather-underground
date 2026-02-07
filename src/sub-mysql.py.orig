@@ -5,8 +5,8 @@
 
 import paho.mqtt.client as mqtt
 
-import pymysql
-from dbutils.persistent_db import PersistentDB
+import pymysqlpool
+#import pymysql.cursors
 
 import sys
 import time
@@ -23,8 +23,6 @@ DEBUG=1
 sensor_model="Fineoffset-WHx080"
 
 software_name = "Custom_RTL433"
-
-TEMP_FILE="/tmp/mqtt_updated.json"
 
 #############################################################################################
 
@@ -157,11 +155,28 @@ Columns:
     "%d", -- `outTempBatteryStatus`
     )
 """
-    print("Saving to DB")
+    config={'host':'xxxx', 'user':'xxx', 'password':'xxx', 'database':'xxx', 'autocommit':True}
 
-    conn = POOL.connection(shareable=False)
+    pymysqlpool.logger.setLevel('DEBUG')
 
-    with conn.cursor() as cursor:
+    pool1 = pymysqlpool.ConnectionPool(size=2, name='pool1', **config)
+
+    con1 = pool1.get_connection()
+    
+    pool1.size()
+
+    try:
+        db = pymysql.connect(host=login_details.mysqlHost, user=login_details.mysqlUser, 
+            password=login_details.mysqlPassword, db=login_details.dbName, 
+            charset='utf8mb4', cursorclass=pymysql.cursors.DictCursor)
+        #print("MySQL Client Connected")
+    except pymysql.Error as e:
+        print("MySQL Connect Error:",e)
+        #sys.exit()
+        #db.close()  # cant db.close here as its not open anyway
+        return
+    
+    with db.cursor() as cursor:
         try:
             #sql = "INSERT INTO `indoor_temperature` (`sensor_id`, `date_time`, `value`, `vtype`) VALUES (%s, %s, %s, %s)"
             cursor.execute(sql, (j['time'], 1, 1, 0, 0, 0, 
@@ -175,16 +190,14 @@ Columns:
                 ((Td * 9.0 / 5.0) + 32.0),
                 int(j['battery_ok'])
             ))
-        except conn.Error as e:
+        except pymysql.Error as e:
             print("MySQL Insert Error:",e)
             #sys.exit()
-            cursor.close()
-            conn.close()
+            db.close()
             return
         finally:
-            conn.commit()
-    cursor.close()
-    conn.close()
+            db.commit()
+    db.close()
     print("DB success")
 
 
@@ -197,21 +210,16 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe("rtl_433/events/"+sensor_model)
 
 def on_message(client, userdata, msg):
-    print("mqtt on_message")
+    #print("Transmission received")
 
     value = str(msg.payload.decode("utf-8")).strip() # payload is the value, in this case the json
-
-    # health check
-    f = open(TEMP_FILE, "w")
-    f.write(value)
-    f.close()
 
     # TODO: pull air quality stats from mySQL
     #cdate,SDS_P1, SDS_P2,temperature,humidity = get_latest_air()
 
 
     if DEBUG==1:
-        print("DEBUG parse mqtt: ",value)
+        print("Rcv:",value)
 
     j = json.loads(value)
 
@@ -244,44 +252,19 @@ def on_message(client, userdata, msg):
     # RainToday * 0.0393701,
     # RainLastHour * 0.0393701
 
-    #print(re.sub("PASSWORD=.*?\&","PASSWORD=XXXXXXX&",url))
+    print(re.sub("PASSWORD=.*?\&","PASSWORD=XXXXXXX&",url))
 
     # send to WU
     r= requests.get(url)
     if DEBUG==1:
-        print("WU response: " + str(r.status_code) + " " + str(r.text))
+        print("Received " + str(r.status_code) + " " + str(r.text))
 
-
+    
 
 #############################################################################################
 
-
-# TODO:
-## connect to mysql
-#try:
-#    POOL = PersistentDB(
-#        creator=pymysql,  # Modules using linked databases
-#        maxusage=None,  # The maximum number of times a link is reused, None Indicates unlimited
-#        setsession=[],  # List of commands executed before starting a session. Such as:["set datestyle to ...", "set time zone ..."]
-#        ping=0,
-#        # ping MySQL Server, check whether the service is available.# For example: 0 = none = never (never detect), 1 = Default = whenever it is requested, 2 = when a cursor is created, 4 = when a query is executed, 7 = always
-#        closeable=False,
-#        # If so False At that time, conn.close() In fact, it is ignored for the next use, and the link will be automatically closed when the thread is closed again. If so True At that time, conn.close()Then close the link and call again pool.connection An error will be reported because the connection has been closed( pool.steady_connection()Can get a new link)
-#        threadlocal=None,  # This thread has exclusive value object, which is used to save the linked object. If the linked object is reset
-#        host=login_details.mysqlHost,
-#        port=3306,
-#        user=login_details.mysqlUser,
-#        password=login_details.mysqlPassword,
-#        database=login_details.dbName,
-#        charset='utf8'
-#    )
-#except pymysql.Error as e:
-#    print("MySQL Connect Error:",e)
-#    sys.exit()
-#
-
 # Connect the MQTT Client
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1,"wu-1")
+client = mqtt.Client("weatherunderground-1")
 client.on_connect = on_connect
 client.on_message = on_message
 # client.username_pw_set(username=mqttUser, password=mqttPassword)
